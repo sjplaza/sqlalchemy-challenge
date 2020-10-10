@@ -1,38 +1,29 @@
+# import dependencies
 import numpy as np
-import datetime
 import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
-
 from flask import Flask, jsonify
 
+# setup the database
 engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
-# reflect an existing database into a new model
 Base = automap_base()
 Base.prepare(engine, reflect=True)
 
-
-# Save reference to the table
 Measurement = Base.classes.measurement
 Station = Base.classes.station
 
-# Create session
 session = Session(engine)
 
-#################################################
-# Flask Setup
-#################################################
+# create an app
 app = Flask(__name__)
 
 
-#################################################
-# Flask Routes
-#################################################
+# show available routes
 @app.route("/")
-def welcome():
-    """List all available api routes."""
+def home():
     return (
         f"Available Routes:<br/>"
         f"/api/v1.0/precipitation<br/>"
@@ -45,53 +36,71 @@ def welcome():
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
-    # Query date and precipation
-    prcp_data = (
+    results = (
         session.query(Measurement.date, Measurement.prcp)
+        .filter(Measurement.date > "2016-08-23", Measurement.date < "2018-01-01")
         .order_by(Measurement.date)
         .all()
     )
+    all_results = []
+    for result in results:
+        result_dict = {}
+        result_dict["date"] = result.date
+        result_dict["prcp"] = result.prcp
+        all_results.append(result_dict)
 
-    results_dict = {}
-    for result in prcp_data:
-        results_dict[result[0]] = result[1]
-    return jsonify(results_dict)
+    return jsonify(all_results)
 
 
 @app.route("/api/v1.0/stations")
 def stations():
-    # Run JSON list of stations from the dataset
-    stations = session.query(Station).all()
+    results = session.query(Station.name).order_by(Station.name).all()
+    all_stations = []
+    for result in results:
+        result_dict = {}
+        result_dict["station"] = result.station
+        result_dict["name"] = result.name
+        all_stations.append(result_dict)
 
-    station_list = []
-    for station in stations:
-        station_dict = {}
-        station_dict["id"] = station.id
-        station_dict["station"] = station.station
-        station_dict["name"] = station.name
-        station_list.append(station_dict)
-    return jsonify(station_list)
+    return jsonify(all_stations)
 
 
 @app.route("/api/v1.0/tobs")
-def temperature():
-    # Query the dates and temps of most active station for the last year of data.
-    station_high_temp = (
-        session.query(Measurement.tobs, Measurement.date)
-        .filter(Measurement.station == "USC00519281")
-        .filter(Measurement.date >= "2017-08-23")
-        .order_by(Measurement.date)
+def tobs2():
+    results = (
+        session.query(Measurement.date, Measurement.tobs)
+        .filter(Measurement.date > "2016-12-31", Measurement.date < "2018-01-01")
         .all()
     )
+    all_tobs2 = []
+    for result in results:
+        result_dict = {}
+        result_dict["date"] = result.date
+        result_dict["tobs"] = result.tobs
+        all_tobs2.append(result_dict)
 
-    temp_list = []
-    for temp_list in station_high_temp:
-        tobs_dict = {}
-        tobs_dict["date"] = station_high_temp.date
-        tobs_dict["station"] = station_high_temp.station
-        tobs_dict["tobs"] = station_high_temp.tobs
-        temp_list.append(tobs_dict)
-    return jsonify(temp_list)
+    return jsonify(all_tobs2)
+
+
+@app.route("/api/v1.0/<start>/<end>")
+def descr(start, end=None):
+    if end == None:
+        end = (
+            session.query(Measurement.date).order_by(Measurement.date.desc()).first([0])
+        )
+    tobs = pd.read_sql(
+        session.query(Measurement.tobs)
+        .filter(Measurement.date > start, Measurement.date <= end)
+        .statement,
+        session.bind,
+    )
+
+    tobs_dict = {}
+    tobs_dict["TMIN"] = tobs.describe().loc[tobs.describe().index == "min"]["tobs"][0]
+    tobs_dict["TAVG"] = tobs.describe().loc[tobs.describe().index == "mean"]["tobs"][0]
+    tobs_dict["TMAX"] = tobs.describe().loc[tobs.describe().index == "max"]["tobs"][0]
+
+    return jsonify(tobs_dict)
 
 
 if __name__ == "__main__":
